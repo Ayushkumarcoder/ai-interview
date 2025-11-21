@@ -130,9 +130,20 @@ import { google } from "@ai-sdk/google";
 
 import { db } from "@/firebase/admin";
 import { getRandomInterviewCover } from "@/lib/utils";
+import { getCurrentUser } from "@/lib/actions/auth.action";
 
 export async function POST(request: Request) {
-  const { type, role, level, techstack, amount, userid } = await request.json();
+  const { type, role, level, techstack, amount, userid, interviewId } = await request.json();
+
+  let userId: string | null = null;
+  if (!interviewId) {
+    const user = await getCurrentUser();
+    if (!user) {
+      return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    userId = user.id;
+  }
+
 
   try {
     const { text: questions } = await generateText({
@@ -158,7 +169,7 @@ export async function POST(request: Request) {
       level: level,
       techstack: techstack.split(","),
       questions: JSON.parse(questions),
-      userId: userid,
+      userId: userId!,
       finalized: true,
       coverImage: getRandomInterviewCover(),
       createdAt: new Date().toISOString(),
