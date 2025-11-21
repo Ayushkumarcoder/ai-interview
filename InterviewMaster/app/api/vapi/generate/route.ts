@@ -146,14 +146,32 @@ export async function POST(request: Request) {
   let finalInterviewId = interviewId;
   
   if (!interviewId || interviewId === "{{interviewId}}") {
-    console.log("⚠️  No valid interviewId - checking session...");
-    const user = await getCurrentUser();
-    if (!user) {
-      console.error("❌ Unauthorized: No session and no interviewId");
-      return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    console.log("⚠️  No valid interviewId - searching for most recent pending interview...");
+    
+    // Find the most recent pending interview (created when page loaded)
+    const pendingDocs = await db
+      .collection("interviews")
+      .where("finalized", "==", false)
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get();
+    
+    if (pendingDocs.empty) {
+      console.error("❌ No pending interview found in database");
+      return Response.json({ 
+        success: false, 
+        error: "No pending interview found. Please refresh the page and try again." 
+      }, { status: 404 });
     }
-    userId = user.id;
-    console.log("✅ Session found, userId:", userId);
+    
+    const pendingDoc = pendingDocs.docs[0];
+    finalInterviewId = pendingDoc.id;
+    userId = pendingDoc.data()?.userId;
+    
+    console.log("✅ Found pending interview!");
+    console.log("  - interviewId:", finalInterviewId);
+    console.log("  - userId:", userId);
+    console.log("  - createdAt:", pendingDoc.data()?.createdAt);
   } else {
     console.log("✅ interviewId provided:", interviewId);
     // Get userId from existing interview doc
