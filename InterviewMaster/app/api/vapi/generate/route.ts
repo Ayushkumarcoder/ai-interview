@@ -133,19 +133,47 @@ import { getRandomInterviewCover } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/actions/auth.action";
 
 export async function POST(request: Request) {
-  const { type, role, level, techstack, amount, userid, interviewId } = await request.json();
+  console.log("====================================");
+  console.log("🚀 VAPI Generate Endpoint - POST Request Started");
+  console.log("⏰ Timestamp:", new Date().toISOString());
+  
+  const body = await request.json();
+  console.log("📦 Request Body:", JSON.stringify(body, null, 2));
+  
+  const { type, role, level, techstack, amount, userid, interviewId } = body;
 
   let userId: string | null = null;
-  if (!interviewId) {
+  let finalInterviewId = interviewId;
+  
+  if (!interviewId || interviewId === "{{interviewId}}") {
+    console.log("⚠️  No valid interviewId - checking session...");
     const user = await getCurrentUser();
     if (!user) {
+      console.error("❌ Unauthorized: No session and no interviewId");
       return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
     userId = user.id;
+    console.log("✅ Session found, userId:", userId);
+  } else {
+    console.log("✅ interviewId provided:", interviewId);
+    // Get userId from existing interview doc
+    const existingDoc = await db.collection("interviews").doc(interviewId).get();
+    if (!existingDoc.exists) {
+      console.error("❌ Interview doc not found:", interviewId);
+      return Response.json({ success: false, error: "Interview not found" }, { status: 404 });
+    }
+    userId = existingDoc.data()?.userId;
+    console.log("✅ Retrieved userId from doc:", userId);
   }
 
+  if (!userId) {
+    console.error("❌ No userId found");
+    return Response.json({ success: false, error: "Missing userId" }, { status: 400 });
+  }
 
   try {
+    console.log("🤖 Generating questions with AI...");
+
     const { text: questions } = await generateText({
       model: google("gemini-2.0-flash-001"),
       prompt: `Prepare questions for a job interview.
@@ -162,25 +190,44 @@ export async function POST(request: Request) {
         Thank you! <3
     `,
     });
+    
+    console.log("✅ AI generated questions");
+    console.log("📄 Raw output:", questions);
 
     const interview = {
       role: role,
       type: type,
       level: level,
-      techstack: techstack.split(","),
+      techstack: Array.isArray(techstack)
+        ? techstack
+        : typeof techstack === "string"
+        ? techstack.split(",").map((s) => s.trim()).filter(Boolean)
+        : [],
       questions: JSON.parse(questions),
-      userId: userId!,
+      userId: userId,
       finalized: true,
       coverImage: getRandomInterviewCover(),
       createdAt: new Date().toISOString(),
     };
 
-    await db.collection("interviews").add(interview);
+    if (finalInterviewId) {
+      console.log("💾 Updating existing interview:", finalInterviewId);
+      await db.collection("interviews").doc(finalInterviewId).set(interview, { merge: true });
+      console.log("✅ Successfully updated!");
+    } else {
+      console.log("💾 Creating new interview...");
+      const docRef = await db.collection("interviews").add(interview);
+      finalInterviewId = docRef.id;
+      console.log("✅ Created with ID:", finalInterviewId);
+    }
 
-    return Response.json({ success: true }, { status: 200 });
+    console.log("🎉 SUCCESS!");
+    console.log("====================================\n");
+    return Response.json({ success: true, interviewId: finalInterviewId }, { status: 200 });
   } catch (error) {
-    console.error("Error:", error);
-    return Response.json({ success: false, error: error }, { status: 500 });
+    console.error("❌ ERROR:", error);
+    console.error("Stack:", (error as any)?.stack);
+    return Response.json({ success: false, error: String(error) }, { status: 500 });
   }
 }
 
