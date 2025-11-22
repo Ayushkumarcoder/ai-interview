@@ -124,18 +124,3 @@ export async function getInterviewsByUserId(
     ...doc.data(),
   })) as Interview[];
 }
-
-export async function createPendingInterviewForUser() {
-  const user = await getCurrentUser();
-  if (!user) return { success: false };
-
-  const ref = db.collection("interviews").doc();
-
-  await ref.set({
-    userId: user.id,
-    finalized: false,
-    createdAt: new Date().toISOString(),
-  });
-
-  return { success: true, interviewId: ref.id };
-}
